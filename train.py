@@ -59,6 +59,6 @@ if __name__ == "__main__":
                 imData = Image.open(f"omniglot/processed/train_processed/{episode_classes[i]}/{img}").resize((28,28)).convert("1").getdata()
                 seqImData = list(imData)
                 orderedImData = make2DPhoto(seqImData)
-                print(orderedImData)
-                sys.exit()
                 output_embed = model.evaluate(orderedImData)
+                print(output_embed)
+                sys.exit()
