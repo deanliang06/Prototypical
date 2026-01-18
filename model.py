@@ -31,5 +31,8 @@ class Model:
         self.init_conv(self.conv1, 1, 8)
         self.init_conv(self.conv2, 8, 16)
 
+    #def train(self, loss): 
 
-    
+    #def evaluate(self, input):
+
+        
