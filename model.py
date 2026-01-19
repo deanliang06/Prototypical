@@ -1,5 +1,4 @@
 import random
-import math
 
 def kernalMulti(x, y, kernal, bias, input):
     displacement = (len(kernal) - 1) // 2 #assuming square and odd *rolling eyes
@@ -30,13 +29,15 @@ def kernalMultiWInputChannelNot1(x, y, kernal, bias, input):
                 sum+=kernal[i][j]*input_chan[x - displacement + i][y - displacement + j]
     return sum + bias
 
-def maxPoolKernal(x, y, len, input):
-    initialDisplacement = (len - 1) / 2
-    max = float('-inf')
-    for i in range(len):
-        for j in range(len):
-            max = math.max(input[x + i - initialDisplacement][y + j - initialDisplacement])
-    return max
+def maxPoolKernal(x, y, length, input):
+    initialDisplacement = (length - 1) // 2
+    maxIn = float('-inf')
+    for i in range(length):
+        for j in range(length):
+            if type(x+i-initialDisplacement) == float:
+                print(x+i-initialDisplacement)
+            maxIn = max(input[int(x + i - initialDisplacement)][int(y + j - initialDisplacement)], maxIn)
+    return maxIn
 
 class Model:
     def __init__(self):
@@ -75,7 +76,6 @@ class Model:
             kernal = filterIsh["filter"]
             bias = filterIsh["bias"]
             filterOutput = []
-            print(len(input))
             #one input dim (very simple) kinda hacky as well because we know if len is 28 then 1 dim but
             if len(input) == 28:
                 for i, row in enumerate(input):
@@ -84,32 +84,32 @@ class Model:
                         newRow.append(kernalMulti(i, j, kernal, bias, input))
                     filterOutput.append(newRow)
             else:
-                print(input)
                 for i, row in enumerate(input[0]):
                     newRow = []
                     for j in range(len(row)):
                         newRow.append(kernalMultiWInputChannelNot1(i, j, kernal, bias, input))
                     filterOutput.append(newRow)
             output.append(filterOutput)
+        return output
 
     def relu(self, input):
         for input_chan in range(len(input)):
-            for row in range (len(input_chan)):
-                for el in range(len(row)):
+            for row in range (len(input[0])):
+                for el in range(len(input[0][0])):
                     val = input[input_chan][row][el]
                     if val < 0: 
                         input[input_chan][row][el] = 0
         return input
     
     #assuming square
-    def max_pool(self, len, input):  
-        output = []          
+    def max_pool(self, length, input):  
+        output = []    
         for input_chan in range(len(input)):
             matrix = []
-            for row in range (len(input_chan) / 2):#implementing stride 2
+            for rowNum in range (len(input[0]) // 2):#implementing stride 2
                 row = []
-                for el in range(len(row) / 2):
-                    row.append(maxPoolKernal(row*2, el*2, len, input[input_chan]))
+                for el in range(len(input[0][0]) // 2):
+                    row.append(maxPoolKernal(rowNum*2, el*2, length, input[input_chan]))
                 matrix.append(row)
             output.append(matrix)
         return output
@@ -120,7 +120,7 @@ class Model:
         #conv1
         conv1_output = self.evaluateConv(self.conv1, input)
         relu_output = self.relu(conv1_output)
-        max_pool_output = self.max_pool(relu_output)
+        max_pool_output = self.max_pool(2, relu_output)
         return max_pool_output #to test
 
     

@@ -16,7 +16,7 @@ def make2DPhoto(seqImData):
     lastRow = []
     for j,item in enumerate(seqImData):
         lastRow.append(item)
-        if j % 27 == 0 and j != 0:
+        if len(lastRow) == 28:
             toCopy.append(lastRow)
             lastRow = []
     return toCopy
