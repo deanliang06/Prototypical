@@ -1,32 +1,18 @@
 import random
 
-def kernalMulti(x, y, kernal, bias, input):
-    displacement = (len(kernal) - 1) // 2 #assuming square and odd *rolling eyes
-    sum = 0
-    for i in range(len(kernal)):
-        for j in range(len(kernal)):
-            #custom padding i guess (i am going to not do positive things to myself)
-            if x - displacement + i < 0 or x - displacement + i >= len(input[0]):
-                continue
-            if y - displacement + j < 0 or y - displacement + j >= len(input):
-                continue
-
-            sum+=kernal[i][j]*input[x - displacement + i][y - displacement + j]
-    return sum + bias
-
 def kernalMultiWInputChannelNot1(x, y, kernal, bias, input):
     displacement = (len(kernal) - 1) // 2 #assuming square and odd *rolling eyes
     sum = 0
-    for input_chan in input:
-        for i in range(len(kernal)):
-            for j in range(len(kernal)):
+    for k, input_chan in enumerate(input):
+        for i in range(len(kernal[0])):
+            for j in range(len(kernal[0][0])):
                 #custom padding i guess (i am going to not do positive things to myself)
                 if x - displacement + i < 0 or x - displacement + i >= len(input_chan[0]):
                     continue
                 if y - displacement + j < 0 or y - displacement + j >= len(input_chan):
                     continue
 
-                sum+=kernal[i][j]*input_chan[x - displacement + i][y - displacement + j]
+                sum+=kernal[k][i][j]*input_chan[x - displacement + i][y - displacement + j]
     return sum + bias
 
 def maxPoolKernal(x, y, length, input):
@@ -34,8 +20,6 @@ def maxPoolKernal(x, y, length, input):
     maxIn = float('-inf')
     for i in range(length):
         for j in range(length):
-            if type(x+i-initialDisplacement) == float:
-                print(x+i-initialDisplacement)
             maxIn = max(input[int(x + i - initialDisplacement)][int(y + j - initialDisplacement)], maxIn)
     return maxIn
 
@@ -50,20 +34,22 @@ class Model:
 
         self.initialize()
 
-    def init_fully_connected(self, array, input_dim, output_dim):
+    def init_fully_connected(self, input_dim, output_dim):
+        newArray = []
         for i in range(output_dim):
-            array.append([random.gauss(0, 0.5) for _ in range(input_dim)])
+            newArray.append([random.gauss(0, 0.5) for _ in range(input_dim)])
+        return newArray
 
     def init_conv(self, conv, input_chan, output_chan):
         for i in range(output_chan):
             filter = []
             for j in range(input_chan):
-                self.init_fully_connected(filter, 3, 3)
+                filter.append(self.init_fully_connected(3, 3))
             conv.append({"filter": filter, "bias": random.gauss(0, 0.5)})
 
     def initialize(self):
-        self.init_fully_connected(self.fc1, 784, 256)
-        self.init_fully_connected(self.fc2, 256, 64)
+        self.fc1 = self.init_fully_connected(784, 256)
+        self.fc2 = self.init_fully_connected(256, 64)
         self.fc1_bias = [random.gauss(0, 0.5) for _ in range(256)]
         self.fc2_bias = [random.gauss(0, 0.5) for _ in range(64)]
         self.init_conv(self.conv1, 1, 8)
@@ -72,23 +58,24 @@ class Model:
     #def train(self, loss): 
     def evaluateConv(self, conv, input):
         output = []
+        if len(input) == 28: input = [input]
         for filterIsh in conv:
             kernal = filterIsh["filter"]
             bias = filterIsh["bias"]
             filterOutput = []
             #one input dim (very simple) kinda hacky as well because we know if len is 28 then 1 dim but
-            if len(input) == 28:
-                for i, row in enumerate(input):
-                    newRow = []
-                    for j in range(len(row)):
-                        newRow.append(kernalMulti(i, j, kernal, bias, input))
-                    filterOutput.append(newRow)
-            else:
-                for i, row in enumerate(input[0]):
-                    newRow = []
-                    for j in range(len(row)):
-                        newRow.append(kernalMultiWInputChannelNot1(i, j, kernal, bias, input))
-                    filterOutput.append(newRow)
+            # if len(input) == 28:
+            #     for i, row in enumerate(input):
+            #         newRow = []
+            #         for j in range(len(row)):
+            #             newRow.append(kernalMulti(i, j, kernal, bias, input))
+            #         filterOutput.append(newRow)
+            # else:
+            for i, row in enumerate(input[0]):
+                newRow = []
+                for j in range(len(row)):
+                    newRow.append(kernalMultiWInputChannelNot1(i, j, kernal, bias, input))
+                filterOutput.append(newRow)
             output.append(filterOutput)
         return output
 
@@ -121,7 +108,10 @@ class Model:
         conv1_output = self.evaluateConv(self.conv1, input)
         relu_output = self.relu(conv1_output)
         max_pool_output = self.max_pool(2, relu_output)
-        return max_pool_output #to test
+        conv2_output = self.evaluateConv(self.conv2, max_pool_output)
+        relu2_output = self.relu(conv2_output)
+        max_pool2_output = self.max_pool(2, relu2_output)
+        return max_pool2_output
 
     
         
