@@ -37,7 +37,7 @@ class Model:
     def init_fully_connected(self, input_dim, output_dim):
         newArray = []
         for i in range(output_dim):
-            newArray.append([random.gauss(0, 0.5) for _ in range(input_dim)])
+            newArray.append([random.gauss(0, 0.05) for _ in range(input_dim)])
         return newArray
 
     def init_conv(self, conv, input_chan, output_chan):
@@ -45,13 +45,13 @@ class Model:
             filter = []
             for j in range(input_chan):
                 filter.append(self.init_fully_connected(3, 3))
-            conv.append({"filter": filter, "bias": random.gauss(0, 0.5)})
+            conv.append({"filter": filter, "bias": random.gauss(0, 0.05)})
 
     def initialize(self):
         self.fc1 = self.init_fully_connected(784, 256)
         self.fc2 = self.init_fully_connected(256, 64)
-        self.fc1_bias = [random.gauss(0, 0.5) for _ in range(256)]
-        self.fc2_bias = [random.gauss(0, 0.5) for _ in range(64)]
+        self.fc1_bias = [random.gauss(0, 0.05) for _ in range(256)]
+        self.fc2_bias = [random.gauss(0, 0.05) for _ in range(64)]
         self.init_conv(self.conv1, 1, 8)
         self.init_conv(self.conv2, 8, 16)
 
@@ -63,14 +63,6 @@ class Model:
             kernal = filterIsh["filter"]
             bias = filterIsh["bias"]
             filterOutput = []
-            #one input dim (very simple) kinda hacky as well because we know if len is 28 then 1 dim but
-            # if len(input) == 28:
-            #     for i, row in enumerate(input):
-            #         newRow = []
-            #         for j in range(len(row)):
-            #             newRow.append(kernalMulti(i, j, kernal, bias, input))
-            #         filterOutput.append(newRow)
-            # else:
             for i, row in enumerate(input[0]):
                 newRow = []
                 for j in range(len(row)):
@@ -79,7 +71,7 @@ class Model:
             output.append(filterOutput)
         return output
 
-    def relu(self, input):
+    def relu_conv(self, input):
         for input_chan in range(len(input)):
             for row in range (len(input[0])):
                 for el in range(len(input[0][0])):
@@ -87,6 +79,12 @@ class Model:
                     if val < 0: 
                         input[input_chan][row][el] = 0
         return input
+    
+    def relu_vec(self, vector):
+        for i in range(len(vector)):
+            if vector[i] < 0:
+                vector[i] = 0
+        return vector
     
     #assuming square
     def max_pool(self, length, input):  
@@ -100,18 +98,47 @@ class Model:
                 matrix.append(row)
             output.append(matrix)
         return output
+    
+    def evaluate_fc(self, layer, bias, vector):
+        def dot_product(vec1, vec2):
+            dot_prod_res = 0
+            for i in range(len(vec1)):
+                dot_prod_res += vec1[i] * vec2[i]
+            return dot_prod_res
+        
+
+        final = []
+
+        for i, row in enumerate(layer):
+            num = dot_product(row, vector)
+            final.append(bias[i] + num)
+        return final
+    
+    def flatten(self, array):
+        final = []
+        for filter in array:
+            for row in filter:
+                for el in row:
+                    final.append(el)
+        return final
 
 
     def evaluate(self, input):
         #ik its not the most robust but...
         #conv1
         conv1_output = self.evaluateConv(self.conv1, input)
-        relu_output = self.relu(conv1_output)
+        relu_output = self.relu_conv(conv1_output)
         max_pool_output = self.max_pool(2, relu_output)
         conv2_output = self.evaluateConv(self.conv2, max_pool_output)
-        relu2_output = self.relu(conv2_output)
+        relu2_output = self.relu_conv(conv2_output)
         max_pool2_output = self.max_pool(2, relu2_output)
-        return max_pool2_output
+        result = self.flatten(max_pool2_output)
+        fc1_result = self.evaluate_fc(self.fc1, self.fc1_bias, result)
+        fc1_relu = self.relu_vec(fc1_result)
+        fc2_result = self.evaluate_fc(self.fc2, self.fc2_bias, fc1_relu)
+        return fc2_result
+
+        
 
     
         

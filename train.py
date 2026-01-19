@@ -4,6 +4,7 @@ import random
 from model import Model
 import sys
 import math
+import time
 
 def test_photo_unique(all, test):
     for epi_class in all:
@@ -20,6 +21,18 @@ def make2DPhoto(seqImData):
             toCopy.append(lastRow)
             lastRow = []
     return toCopy
+
+def add_component_wise(vec1, vec2):
+    if len(vec2) == 0: return vec1
+    new = []
+    for i in range(len(vec1)):
+        new.append(vec1[i] + vec2[i])
+    return new
+
+def scalar_to_vec(scalar, vec):
+    for i in range(len(vec)):
+        vec[i]*=scalar
+    return vec
 
 
 if __name__ == "__main__":
@@ -53,12 +66,23 @@ if __name__ == "__main__":
 
         #call eval for all train
         for i, epi_class in enumerate(all_photos):
-            class_mean = 0
+            class_mean = []
             #evaluate the image and calcualte the euclidean distance mean
+            sum = 0
             for img in epi_class:
+                originalTime = time.time_ns()
                 imData = Image.open(f"omniglot/processed/train_processed/{episode_classes[i]}/{img}").resize((28,28)).convert("1").getdata()
                 seqImData = list(imData)
                 orderedImData = make2DPhoto(seqImData)
                 output_embed = model.evaluate(orderedImData)
-                print(output_embed)
-                sys.exit()
+                class_mean = add_component_wise(output_embed, class_mean)
+
+                #other logging metrics
+                sum += time.time_ns() - originalTime
+            print(f"Average seconds per evaluation: {sum/len(epi_class)/pow(10, 9)}")
+
+            #divide by total imgs
+            class_mean = scalar_to_vec(1.0/len(epi_class), class_mean)
+            print(class_mean)
+            sys.exit()
+
