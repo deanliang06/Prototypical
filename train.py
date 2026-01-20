@@ -34,11 +34,24 @@ def scalar_to_vec(scalar, vec):
         vec[i]*=scalar
     return vec
 
+def euclidean_distance(vec1, vec2):
+    sum_of_squares = 0
+    for i in range(len(vec1)):
+        sum_of_squares+=(vec1[i]-vec2[i])**2
+    return sum_of_squares**(1/2)
+
+def make_photo_2D(link):
+    imData = Image.open(link).resize((28,28)).convert("1").getdata()
+    seqImData = list(imData)
+    orderedImData = make2DPhoto(seqImData)
+    return orderedImData
+
 
 if __name__ == "__main__":
     classes = os.listdir("omniglot/processed/train_processed")
+    LEARNING_RATE = 0.05
     ITERATIONS = 1000
-    model = Model()
+    model = Model(LEARNING_RATE)
 
     for it in range(ITERATIONS):
         episode_classes = random.sample(classes, 15)
@@ -48,7 +61,10 @@ if __name__ == "__main__":
         for epi_class in episode_classes:
             chars = os.listdir(f"omniglot/processed/train_processed/{epi_class}")
             selected = random.sample(chars, 20)
-            all_photos.append(selected)
+            selected_address = []
+            for one in selected:
+                selected_address.append(f"omniglot/processed/train_processed/{epi_class}/{one}")
+            all_photos.append({"imgs": selected_address, "class": epi_class})
 
         #test for training without replacement
         total_photos = len(episode_classes) * 80
@@ -61,28 +77,40 @@ if __name__ == "__main__":
 
                 chars = os.listdir(f"omniglot/processed/train_processed/{episode_classes[which_class]}")
                 if test_photo_unique(all_photos, chars[image_num]):
-                    test.append(chars[image_num])
+                    test.append({"img": f"omniglot/processed/train_processed/{episode_classes[which_class]}/{chars[image_num]}", "class": episode_classes[which_class]})
                     break
 
         #call eval for all train
-        for i, epi_class in enumerate(all_photos):
+        means = {}
+        for i, epi_class_object in enumerate(all_photos):
+            the_class = epi_class_object["class"]
+            epi_class = epi_class_object["imgs"]
             class_mean = []
             #evaluate the image and calcualte the euclidean distance mean
             sum = 0
             for img in epi_class:
-                originalTime = time.time_ns()
-                imData = Image.open(f"omniglot/processed/train_processed/{episode_classes[i]}/{img}").resize((28,28)).convert("1").getdata()
-                seqImData = list(imData)
-                orderedImData = make2DPhoto(seqImData)
+                orderedImData = make_photo_2D(img)
                 output_embed = model.evaluate(orderedImData)
                 class_mean = add_component_wise(output_embed, class_mean)
 
-                #other logging metrics
-                sum += time.time_ns() - originalTime
-            print(f"Average seconds per evaluation: {sum/len(epi_class)/pow(10, 9)}")
-
             #divide by total imgs
             class_mean = scalar_to_vec(1.0/len(epi_class), class_mean)
-            print(class_mean)
-            sys.exit()
+            means[the_class] = class_mean
+
+        loss = 0
+        for img_object in test:
+            img = img_object["img"]
+            target = means[img_object["class"]]
+            orderedImData = make_photo_2D(img)
+            prediction = model.evaluate(orderedImData)
+
+            #now compute loss and gradients
+            #loss
+
+            loss+=model.compute_loss(prediction, target, img_object, means)
+            #now calculate gradients
+            model.apply_gradients(means, prediction, img_object["class"])
+
+        print(f"Iteration #{it + 1} Average Loss: {loss}")
+            
 
