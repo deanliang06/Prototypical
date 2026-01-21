@@ -4,7 +4,6 @@ import random
 from model import Model
 import sys
 import math
-import time
 
 def test_photo_unique(all, test):
     for epi_class in all:
@@ -49,7 +48,7 @@ def make_photo_2D(link):
 
 if __name__ == "__main__":
     classes = os.listdir("omniglot/processed/train_processed")
-    LEARNING_RATE = 0.05
+    LEARNING_RATE = 0.005
     ITERATIONS = 1000
     model = Model(LEARNING_RATE)
 
@@ -107,7 +106,7 @@ if __name__ == "__main__":
             #now compute loss and gradients
             #loss
 
-            loss+=model.compute_loss(prediction, target, img_object, means)
+            loss+=model.compute_loss(prediction, target, means)
             #now calculate gradients
             model.apply_gradients(means, prediction, img_object["class"])
 
