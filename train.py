@@ -48,7 +48,8 @@ def make_photo_2D(link):
 
 if __name__ == "__main__":
     classes = os.listdir("omniglot/processed/train_processed")
-    LEARNING_RATE = 0.005
+    LEARNING_RATE = 0.05
+    FC_LEARNING_RATE = 0.05
     ITERATIONS = 1000
     model = Model(LEARNING_RATE)
 
@@ -110,6 +111,6 @@ if __name__ == "__main__":
             #now calculate gradients
             model.apply_gradients(means, prediction, img_object["class"])
 
-        print(f"Iteration #{it + 1} Average Loss: {loss}")
+        print(f"Episode #{it + 1} Average Loss: {loss}")
             
 

@@ -1,5 +1,7 @@
 import random
 import math
+import json
+import sys
 
 def kernalMultiWInputChannelNot1(x, y, kernal, bias, input):
     displacement = (len(kernal) - 1) // 2 #assuming square and odd *rolling eyes
@@ -24,22 +26,24 @@ def maxPoolKernal(x, y, length, input):
             maxIn = max(input[int(x + i - initialDisplacement)][int(y + j - initialDisplacement)], maxIn)
     return maxIn
 
-def maxPoolKernalGrad(x, y, length, input, grad):
-    initialDisplacement = (length - 1) // 2
+def maxPoolKernalGrad(x, y, length, input, grad, matrix):
     maxIn = float('-inf')
     for i in range(length):
         for j in range(length):
-            maxIn = max(input[int(x + i - initialDisplacement)][int(y + j - initialDisplacement)], maxIn)
-
-    soFar = False
+            if x+i >= len(input) or y+j >=len(input[0]): continue
+            maxIn = max(input[x + i][y + j], maxIn)
+    
     for i in range(length):
         for j in range(length):
-            val = input[int(x + i - initialDisplacement)][int(y + j - initialDisplacement)]
-            if not soFar and val == maxIn:
-                input[int(x + i - initialDisplacement)][int(y + j - initialDisplacement)] = grad
-                soFar = True
+            if x+i >= len(input) or y+j >=len(input[0]): continue
+            if input[x + i][y + j] == maxIn:
+                matrix[x+i][y+j] = grad
             else:
-                input[int(x + i - initialDisplacement)][int(y + j - initialDisplacement)] = 0
+                matrix[x+i][y+j] = 0
+
+
+    
+    
 
 
 def sub_component_wise(vec1, vec2):
@@ -70,6 +74,10 @@ def add_component_wise(vec1, vec2):
         new.append(vec1[i] + vec2[i])
     return new
 
+def regularize_embedding(vec):
+    len = math.sqrt(sum(x*x for x in vec))
+    return [x/len for x in vec]
+
 class Model:
     
     def __init__(self, learning_rate):
@@ -98,7 +106,7 @@ class Model:
     def init_fully_connected(self, input_dim, output_dim):
         newArray = []
         for i in range(output_dim):
-            newArray.append([random.gauss(0, 0.005) for _ in range(input_dim)])
+            newArray.append([random.gauss(0, 0.05) for _ in range(input_dim)])
         return newArray
 
     def init_conv(self, conv, input_chan, output_chan):
@@ -111,8 +119,8 @@ class Model:
     def initialize(self):
         self.fc1 = self.init_fully_connected(784, 256)
         self.fc2 = self.init_fully_connected(256, 64)
-        self.fc1_bias = [random.gauss(0, 0.005) for _ in range(256)]
-        self.fc2_bias = [random.gauss(0, 0.005) for _ in range(64)]
+        self.fc1_bias = [random.gauss(0, 0.05) for _ in range(256)]
+        self.fc2_bias = [random.gauss(0, 0.05) for _ in range(64)]
         self.init_conv(self.conv1, 1, 8)
         self.init_conv(self.conv2, 8, 16)
 
@@ -224,17 +232,18 @@ class Model:
 
     def output_grad(self, means, prediction, target_class):
         dLdv = []
+        temperature = 500
         sum = 0
         for value in means.values():
-            sum+=math.exp(-1* euclidean_distance(value, prediction))
+            sum+=math.exp(-1/temperature* euclidean_distance(value, prediction))
 
         for key,value in means.items():
             if key == target_class:
-                if len(dLdv) == 0: dLdv = add_component_wise(scalar_to_vec(2*(math.exp(-1* euclidean_distance(value, prediction))/sum - 1),(sub_component_wise(prediction, value))), dLdv)
-                else: dLdv= add_component_wise(scalar_to_vec(2*(math.exp(-1* euclidean_distance(value, prediction))/sum - 1),(sub_component_wise(prediction, value))), dLdv)
+                if len(dLdv) == 0: dLdv = add_component_wise(scalar_to_vec(2*(math.exp((-1/temperature* euclidean_distance(value, prediction))/sum - 1)),(sub_component_wise(prediction, value))), dLdv)
+                else: dLdv= add_component_wise(scalar_to_vec(2*(math.exp((-1/temperature* euclidean_distance(value, prediction))/sum - 1)),(sub_component_wise(prediction, value))), dLdv)
             else:
-                if len(dLdv) == 0: dLdv = add_component_wise(scalar_to_vec(2*(math.exp(-1* euclidean_distance(value, prediction))/sum),(sub_component_wise(prediction, value))), dLdv)
-                else: dLdv= add_component_wise(scalar_to_vec(2*(math.exp(-1* euclidean_distance(value, prediction))/sum),(sub_component_wise(prediction, value))), dLdv)
+                if len(dLdv) == 0: dLdv = add_component_wise(scalar_to_vec(2*(math.exp(-1/temperature* euclidean_distance(value, prediction))/sum),(sub_component_wise(prediction, value))), dLdv)
+                else: dLdv= add_component_wise(scalar_to_vec(2*(math.exp(-1/temperature* euclidean_distance(value, prediction))/sum),(sub_component_wise(prediction, value))), dLdv)
         return dLdv
     
     def apply_relu3_grad(self, relu_output_grad):
@@ -273,19 +282,17 @@ class Model:
 
     def apply_max_pool2_grad(self, output_grad):
         #assumed 2x2 maxpool with stride 2
-        input = self.max_pool_2_input[:]
+        input = self.max_pool_2_input
         output = []
         for input_chan in range(len(input)):
-            matrix = []
-            for rowNum in range (len(input[0]) // 2):#implementing stride 2
-                row = []
-                for el in range(len(input[0][0]) // 2):
-                    row.append(maxPoolKernalGrad(rowNum*2, el*2, 2, input[input_chan], output_grad[input_chan][rowNum][el]))
-                matrix.append(row)
+            matrix = self.init_fully_connected(len(input[0]), len(input[0]))
+            for rowNum in range (math.ceil(len(input[0]) / 2)):#implementing stride 2
+                for el in range(math.ceil(len(input[0][0]) / 2)):
+                    maxPoolKernalGrad(rowNum* 2, el* 2, 2, input[input_chan], output_grad[input_chan][rowNum][el], matrix)
             output.append(matrix)
         self.conv2_output_grad = output
 
-    def apply_relu2_grad(self, output, input):
+    def apply_relu_grad(self, output, input):
         for i in range(len(output)):
             for j in range(len(output[0])):
                 for k in range(len(output[0][0])):
@@ -303,11 +310,14 @@ class Model:
                     sum+=correct_grad_matrix[x+i][y+j]*correct_kernal[1-i][1-j]
         return sum
 
-    def calculate_kernal_grad(self, output_num, filter, x, y, input, output_grad):
+    def calculate_kernal_grad(self, output_num, x, y, input, output_grad):
         output_grad_simplied = output_grad[output_num]
-
-        for i in range(max(x - 1, 0), len(input)):#because if x == 2 then we don't do the first row and other extrapolated facts
-            for j in range(max(y - 1, 0), len(input[0])):
+        sum = 0
+        for i in range(len(input)):#because if x == 2 then we don't do the first row and other extrapolated facts
+            for j in range(len(input[0])):
+                if i + x - 1 < 0 or i + x - 1 >= len(input) or j + y - 1 < 0 or j + y - 1 >= len(input[0]): continue
+                sum+=output_grad_simplied[i][j]*input[i + x - 1][j + y - 1]
+        return sum
                 
     def apply_conv2_grad(self, input, output_grad):
         #calcualte the ouput_grad of last layer first
@@ -326,7 +336,7 @@ class Model:
 
             #update bias
             bias_grad = 0
-            for row in output_grad[i]:
+            for row in output_grad[o]:
                 for el in row:
                     bias_grad+=el
             filter["bias"]-=self.LEARNING_RATE*bias_grad
@@ -335,31 +345,83 @@ class Model:
             for f, input_filter in enumerate(kernal):
                 for i, row in enumerate(input_filter):
                     for j, el in enumerate(row):
-                        filter["filter"][f][i][j]-=self.LEARNING_RATE* self.calculate_kernal_grad(o, f, i, j, input)
+                        filter["filter"][f][i][j]-=self.LEARNING_RATE* self.calculate_kernal_grad(o, i, j, input[f], output_grad)
 
 
 
+    def apply_max_pool1_grad(self, output_grad):
+        #assumed 2x2 maxpool with stride 2
+        input = self.max_pool1_input
+        output = []
+        for input_chan in range(len(input)):
+            matrix = self.init_fully_connected(len(input[0]), len(input[0]))
+            for rowNum in range (math.ceil(len(input[0]) / 2)):#implementing stride 2
+                for el in range(math.ceil(len(input[0][0]) / 2)):
+                    maxPoolKernalGrad(rowNum* 2, el* 2, 2, input[input_chan], output_grad[input_chan][rowNum][el], matrix)
+            output.append(matrix)
+        self.conv1_output_grad = output
 
+    def apply_conv1_grad(self, input, output_grad):
+        for o, filter in enumerate(self.conv1):
+            kernal = filter["filter"]
 
+            #update bias
+            bias_grad = 0
+            for row in output_grad[o]:
+                for el in row:
+                    bias_grad+=el
+            filter["bias"]-=self.LEARNING_RATE*bias_grad
+
+            #update kernal vals
+            for f, input_filter in enumerate(kernal):
+                for i, row in enumerate(input_filter):
+                    for j, el in enumerate(row):
+                        filter["filter"][f][i][j]-=self.LEARNING_RATE* self.calculate_kernal_grad(o, i, j, input, output_grad)
+
+    def zero_grad(self):
+        self.conv2_output_grad = []
+        self.conv1_output_grad = []
+        self.max_pool_2_output_grad = []
+        self.fc1_output_grad = []
+
+    def save(self):
+        output = {
+            "conv1": self.conv1,
+            "conv2": self.conv2,
+            "fc1": self.fc1,
+            "fc1_bias": self.fc1_bias,
+            "fc2": self.fc2,
+            "fc2_bias": self.fc2_bias,
+        }
+        
+        with open("model.txt", 'w') as f:
+            json.dump(output, f)
 
     def apply_gradients(self, means, prediction, target_class):
         dLdv = self.output_grad(means, prediction, target_class)
+        print(self.fc2[0][0])
         self.apply_fc2_grad(dLdv)
+        print(self.fc2[0][0])
         self.apply_relu3_grad(self.fc1_output_grad)
         self.apply_fc1_grad(self.fc1_output_grad)
         self.apply_reverse_flatten(16, 7, self.flatten_output_grad)
         self.apply_max_pool2_grad(self.max_pool_2_output_grad)
-        self.apply_relu2_grad(self.conv2_output_grad, self.conv2_output)
+        self.apply_relu_grad(self.conv2_output_grad, self.conv2_output)
         self.apply_conv2_grad(self.conv2_input, self.conv2_output_grad)
-
-
+        self.apply_max_pool1_grad(self.conv1_output_grad)
+        self.apply_relu_grad(self.conv1_output_grad, self.conv1_output)
+        self.apply_conv1_grad(self.conv1_input,self.conv1_output_grad)
+        self.zero_grad()
+        self.save()
 
     def evaluate(self, input):
         #ik its not the most robust but... I have to hand calcualte gradients
         #I don't really know how to do that but okay vro
         self.conv1_input = input
         conv1_output = self.evaluateConv(self.conv1, input)
+        self.conv1_output = conv1_output
         relu_output = self.relu_conv(conv1_output)
+        self.max_pool1_input = relu_output
         max_pool_output = self.max_pool(2, relu_output)
         self.conv2_input = max_pool_output
         self.conv2_output = self.evaluateConv(self.conv2, max_pool_output)
