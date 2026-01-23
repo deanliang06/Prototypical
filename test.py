@@ -46,20 +46,31 @@ def make_photo_2D(link):
     orderedImData = make2DPhoto(seqImData)
     return orderedImData
 
+def check_closest(means, prediction, true_class):
+    closest = ""
+    closests_dist = float('inf')
+    for key, value in means.items():
+        dist = euclidean_distance(value, prediction)
+        if (dist < closests_dist):
+            closests_dist = dist
+            closest = key
+    if closest == true_class:
+        return True
+    return False
+
 if __name__ == "__main__":
     classes = os.listdir("omniglot/processed/train_processed")
-    LEARNING_RATE = 0.005
-    FC_LEARNING_RATE = 0.05
-    ITERATIONS = 1000
-    model = Model(LEARNING_RATE)
+    ITERATIONS = 50
+    model = Model(0, True)
+    overall_accurcy = 0
     for it in range(ITERATIONS):
-        episode_classes = random.sample(classes, 15)
+        episode_classes = random.sample(classes, 5)
 
         all_photos = []
         #These are the "train"
         for epi_class in episode_classes:
             chars = os.listdir(f"omniglot/processed/train_processed/{epi_class}")
-            selected = random.sample(chars, 20)
+            selected = random.sample(chars, 5)
             selected_address = []
             for one in selected:
                 selected_address.append(f"omniglot/processed/train_processed/{epi_class}/{one}")
@@ -68,7 +79,7 @@ if __name__ == "__main__":
         #test for training without replacement
         total_photos = len(episode_classes) * 80
         test = []
-        for i in range(5):
+        for i in range(20):
             while True:
                 idx = math.floor(total_photos * random.random())
                 which_class = idx//80
@@ -96,21 +107,22 @@ if __name__ == "__main__":
             class_mean = scalar_to_vec(1.0/len(epi_class), class_mean)
             means[the_class] = class_mean
 
-        loss = 0
+        test_accurcy = 0
         for img_object in test:
             img = img_object["img"]
             target = means[img_object["class"]]
             orderedImData = make_photo_2D(img)
             prediction = model.evaluate(orderedImData)
+            
+            if check_closest(means, prediction, img_object["class"]):
+                test_accurcy+=1
 
-            #now compute loss and gradients
-            #loss
 
-            loss+=model.compute_loss(prediction, target, means)
-            #now calculate gradients
-            model.apply_gradients(means, prediction, img_object["class"])
+        test_accurcy = test_accurcy / len(test)
+        overall_accurcy += test_accurcy
     
 
-        print(f"Episode #{it + 1} Average Loss: {loss}")
-            
+        print(f"Episode #{it + 1} Accurcy: {test_accurcy}")
 
+    overall_accurcy/=ITERATIONS
+    print(f"Model Accurcy: {overall_accurcy}")

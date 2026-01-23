@@ -4,7 +4,8 @@ import json
 import sys
 
 def kernalMultiWInputChannelNot1(x, y, kernal, bias, input):
-    displacement = (len(kernal) - 1) // 2 #assuming square and odd *rolling eyes
+    displacement = (len(kernal[0]) - 1) // 2 #assuming square and odd *rolling eyes
+
     sum = 0
     for k, input_chan in enumerate(input):
         for i in range(len(kernal[0])):
@@ -58,6 +59,7 @@ def euclidean_distance(vec1, vec2):
     for i in range(len(vec1)):
         sum_of_squares+=(vec1[i]-vec2[i])**2
     return sum_of_squares**(1/2)
+
 def sq_euclidean_distance(vec1, vec2):
     return euclidean_distance(vec1, vec2)**2
 
@@ -80,7 +82,7 @@ def regularize_embedding(vec):
 
 class Model:
     
-    def __init__(self, learning_rate):
+    def __init__(self, learning_rate, load=False):
         self.conv1 = []
         self.conv1_input = []
         self.conv2 = []
@@ -100,29 +102,52 @@ class Model:
 
         self.img_loss_contribution = 0
         self.LEARNING_RATE = learning_rate
+        self.iteration = 1
+        self.loaded = load
 
         self.initialize()
 
     def init_fully_connected(self, input_dim, output_dim):
         newArray = []
+        std = math.sqrt(2.0 / (input_dim + output_dim))
         for i in range(output_dim):
-            newArray.append([random.gauss(0, 0.05) for _ in range(input_dim)])
+            newArray.append([random.gauss(0, std) for _ in range(input_dim)])
         return newArray
+
 
     def init_conv(self, conv, input_chan, output_chan):
         for i in range(output_chan):
-            filter = []
+            filter_list = []
             for j in range(input_chan):
-                filter.append(self.init_fully_connected(3, 3))
-            conv.append({"filter": filter, "bias": random.gauss(0, 0.005)})
+                fan_in = input_chan * 3 * 3
+                std = math.sqrt(2.0 / fan_in)
+                filter_3x3 = [[random.gauss(0, std) for _ in range(3)] for _ in range(3)]
+                filter_list.append(filter_3x3)
+            conv.append({"filter": filter_list, "bias": 0.0})
 
     def initialize(self):
+        if (self.loaded == True):
+            self.load_from_file()
+            return
         self.fc1 = self.init_fully_connected(784, 256)
         self.fc2 = self.init_fully_connected(256, 64)
-        self.fc1_bias = [random.gauss(0, 0.05) for _ in range(256)]
-        self.fc2_bias = [random.gauss(0, 0.05) for _ in range(64)]
+        self.fc1_bias = [0.0 for _ in range(256)]
+        self.fc2_bias = [0.0 for _ in range(64)]
         self.init_conv(self.conv1, 1, 8)
         self.init_conv(self.conv2, 8, 16)
+
+    def load_from_file(self):
+        json_thing = {}
+        with open("model.txt", "r") as f:
+            content = f.read()
+            json_thing = json.loads(content)
+        
+        self.fc1 = json_thing["fc1"]
+        self.fc2 = json_thing["fc2"]
+        self.fc1_bias = json_thing["fc1_bias"]
+        self.fc2_bias = json_thing["fc2_bias"]
+        self.conv1 = json_thing["conv1"]
+        self.conv2 = json_thing["conv2"]
 
     #def train(self, loss): 
     def evaluateConv(self, conv, input):
@@ -200,16 +225,12 @@ class Model:
         return final
     
     def compute_loss(self, prediction, target, means):
-        d_target = sq_euclidean_distance(target, prediction)
-
-        dists = []
+        temperature = 2
+        softmax_sum = 0
         for value in means.values():
-            dists.append(-1* sq_euclidean_distance(value, prediction))
+            softmax_sum+=math.exp(-1/temperature* sq_euclidean_distance(value, prediction))
 
-        max_val = max(dists)   
-        log_sum = max_val + math.log(sum(math.exp(v - max_val) for v in dists))
-
-        self.img_loss_contribution = (-d_target - log_sum) / 5
+        self.img_loss_contribution = -1*math.log(math.exp(-1/temperature*sq_euclidean_distance(prediction, target))/softmax_sum)
         return self.img_loss_contribution
 
     def apply_fc2_grad(self, dLdv):
@@ -229,21 +250,47 @@ class Model:
                 self.fc2[i][j]-=self.LEARNING_RATE*dLdv[i]*self.fc2_input[j]
 
 
-
     def output_grad(self, means, prediction, target_class):
         dLdv = []
-        temperature = 500
-        sum = 0
-        for value in means.values():
-            sum+=math.exp(-1/temperature* euclidean_distance(value, prediction))
-
-        for key,value in means.items():
-            if key == target_class:
-                if len(dLdv) == 0: dLdv = add_component_wise(scalar_to_vec(2*(math.exp((-1/temperature* euclidean_distance(value, prediction))/sum - 1)),(sub_component_wise(prediction, value))), dLdv)
-                else: dLdv= add_component_wise(scalar_to_vec(2*(math.exp((-1/temperature* euclidean_distance(value, prediction))/sum - 1)),(sub_component_wise(prediction, value))), dLdv)
+        temperature = 2
+        if self.iteration >= 100:
+            temperature = 0.8
+        repulsion = 0.01
+        sigma = 0.5
+        
+        neg_distances = {}
+        for key, value in means.items():
+            neg_distances[key] = -1/temperature * sq_euclidean_distance(value, prediction)
+        
+        max_neg_dist = max(neg_distances.values())
+        
+        exp_dists = {}
+        sum_exp = 0
+        for key, neg_dist in neg_distances.items():
+            exp_dists[key] = math.exp(neg_dist - max_neg_dist)
+            sum_exp += exp_dists[key]
+        
+        softmax_probs = {key: exp_dists[key] / sum_exp for key in exp_dists}
+        
+        for key, value in means.items():
+            this_soft_max = softmax_probs[key]
+            if len(dLdv) == 0:
+                dLdv = scalar_to_vec(this_soft_max, list(value))
             else:
-                if len(dLdv) == 0: dLdv = add_component_wise(scalar_to_vec(2*(math.exp(-1/temperature* euclidean_distance(value, prediction))/sum),(sub_component_wise(prediction, value))), dLdv)
-                else: dLdv= add_component_wise(scalar_to_vec(2*(math.exp(-1/temperature* euclidean_distance(value, prediction))/sum),(sub_component_wise(prediction, value))), dLdv)
+                dLdv = add_component_wise(scalar_to_vec(this_soft_max, list(value)), dLdv)
+        
+        dLdv = scalar_to_vec(2/temperature, sub_component_wise(dLdv, means[target_class]))
+
+        for key, value in means.items():
+            if key != target_class:
+                dLdv = add_component_wise(dLdv, scalar_to_vec(
+                    repulsion * math.exp(-1*sq_euclidean_distance(prediction, value)/(2*sigma**2))/sigma**2 * -1,
+                    sub_component_wise(prediction, value)))
+            else:
+                dLdv = add_component_wise(dLdv, scalar_to_vec(
+                    repulsion * math.exp(-1*sq_euclidean_distance(prediction, value)/(2*sigma**2))/sigma**2,
+                    sub_component_wise(prediction, value)))
+
         return dLdv
     
     def apply_relu3_grad(self, relu_output_grad):
@@ -339,7 +386,7 @@ class Model:
             for row in output_grad[o]:
                 for el in row:
                     bias_grad+=el
-            filter["bias"]-=self.LEARNING_RATE*bias_grad
+            filter["bias"]-=self.LEARNING_RATE*bias_grad#/(len(output_grad[o])*len(row))
 
             #update kernal vals
             for f, input_filter in enumerate(kernal):
@@ -370,7 +417,8 @@ class Model:
             for row in output_grad[o]:
                 for el in row:
                     bias_grad+=el
-            filter["bias"]-=self.LEARNING_RATE*bias_grad
+            filter["bias"]-=self.LEARNING_RATE*bias_grad#/(len(output_grad[o])* len(row))
+
 
             #update kernal vals
             for f, input_filter in enumerate(kernal):
@@ -399,9 +447,7 @@ class Model:
 
     def apply_gradients(self, means, prediction, target_class):
         dLdv = self.output_grad(means, prediction, target_class)
-        print(self.fc2[0][0])
         self.apply_fc2_grad(dLdv)
-        print(self.fc2[0][0])
         self.apply_relu3_grad(self.fc1_output_grad)
         self.apply_fc1_grad(self.fc1_output_grad)
         self.apply_reverse_flatten(16, 7, self.flatten_output_grad)
@@ -410,10 +456,19 @@ class Model:
         self.apply_conv2_grad(self.conv2_input, self.conv2_output_grad)
         self.apply_max_pool1_grad(self.conv1_output_grad)
         self.apply_relu_grad(self.conv1_output_grad, self.conv1_output)
-        self.apply_conv1_grad(self.conv1_input,self.conv1_output_grad)
+        self.apply_conv1_grad(self.conv1_input,self.conv1_output_grad)  
+        # mean_distances = []
+        # for i, cls1 in enumerate(list(means.keys())):
+        #     for cls2 in list(means.keys())[i+1:]:
+        #         dist = euclidean_distance(means[cls1], means[cls2])
+        #         mean_distances.append(dist)
+
+        # print(f"Average distance between class means: {sum(mean_distances)/len(mean_distances):.3f}")
+        # print(f"Min distance between means: {min(mean_distances):.3f}")
+        # print(f"Max distance between means: {max(mean_distances):.3f}")
         self.zero_grad()
         self.save()
-
+        self.iteration+=1
     def evaluate(self, input):
         #ik its not the most robust but... I have to hand calcualte gradients
         #I don't really know how to do that but okay vro
